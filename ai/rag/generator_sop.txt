@@ -1,0 +1,68 @@
+HIMADRI-DT — GENERATOR OPERATING PROCEDURE
+Prototype Reference Document
+
+1. ABNORMAL VIBRATION
+
+If a generator shows abnormal vibration, the operator should perform the following checks:
+
+- Check whether the generator is securely mounted and that mounting points are intact.
+- Inspect the generator bearings for unusual noise, heat, or visible damage.
+- Check lubrication levels and look for signs of insufficient lubrication.
+- Check the generator cooling system and confirm that airflow is not obstructed.
+- Verify that the generator is operating within its expected load and speed range.
+- Inspect the surrounding area for loose components or abnormal mechanical movement.
+
+If abnormal vibration continues, the generator should be flagged for maintenance inspection.
+
+2. HIGH TEMPERATURE
+
+If generator temperature is unusually high:
+
+- Check the cooling system and airflow.
+- Check coolant levels if applicable.
+- Inspect ventilation paths for blockage.
+- Check whether the generator is operating under unusually high load.
+- Monitor the temperature trend for continued increase.
+
+If temperature continues to rise, reduce operational load where safe and request maintenance inspection.
+
+3. HIGH LOAD
+
+If generator load becomes unusually high:
+
+- Check the current station power demand.
+- Identify high-consumption systems currently operating.
+- Check whether another generator or power source is available.
+- Monitor generator temperature and vibration.
+- Avoid prolonged operation beyond the approved operating range.
+
+4. FUEL ABNORMALITY
+
+If fuel consumption becomes unusually high:
+
+- Check current generator load.
+- Compare fuel consumption with recent operating trends.
+- Inspect for possible fuel leakage.
+- Check whether the generator is operating inefficiently.
+- Monitor fuel levels and consumption rate.
+
+5. COMMUNICATION FAILURE
+
+If communication with the central control system is unavailable:
+
+- Continue local monitoring using station-side systems.
+- Store important telemetry locally.
+- Continue approved local operational procedures.
+- Queue data for synchronization when connectivity is restored.
+- Use available approved communication or relay channels according to station procedures.
+
+6. GENERAL SAFETY
+
+- Do not perform maintenance beyond the operator's authorization.
+- Follow approved station safety procedures.
+- If an unsafe condition is suspected, prioritize personnel safety.
+- Escalate equipment abnormalities to the responsible maintenance or station authority.
+
+NOTE:
+This is a prototype reference document created for HIMADRI-DT demonstration purposes.
+It is not an official NCPOR operational manual and must not be treated as one.

@@ -1,0 +1,13 @@
+# HIMADRI-DT AI dependencies
+
+# Predictive AI / anomaly detection
+pandas
+numpy
+scikit-learn
+joblib
+
+# RAG / semantic retrieval
+sentence-transformers
+
+# Offline LLM communication (Ollama)
+requests

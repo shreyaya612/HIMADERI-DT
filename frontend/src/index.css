@@ -1,0 +1,75 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+:root {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background-color: #070A0E;
+  color: #F2F5F7;
+  color-scheme: dark;
+
+  /* Custom Color Tokens */
+  --bg-main: #070A0E;
+  --bg-secondary: #0B1016;
+  --surface-1: #0E141B;
+  --surface-2: #121922;
+  --surface-3: #161F29;
+  --border-subtle: #202A35;
+  --border-medium: #2A3542;
+  --text-primary: #F2F5F7;
+  --text-secondary: #A7B0BA;
+  --text-muted: #6E7883;
+  --accent-ice: #78B9E8;
+  --status-healthy: #42D392;
+  --status-warning: #E8B84A;
+  --status-critical: #F05A5A;
+  --status-info: #62B7FF;
+}
+
+* {
+  box-sizing: border-box;
+  border-color: var(--border-subtle);
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-main);
+  color: var(--text-primary);
+  min-width: 320px;
+  overflow-x: hidden;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+/* IBM Plex Mono Utility for Telemetry, Coordinates, Timestamps */
+.font-mono {
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+/* Custom Scrollbar for Mission Control Feel */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #070A0E;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #202A35;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #2A3542;
+}
+
+/* Custom Pulsing Utilities */
+@keyframes subtle-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.animate-subtle-pulse {
+  animation: subtle-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
