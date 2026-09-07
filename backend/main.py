@@ -712,5 +712,30 @@ def test_local_assistant():
     }
 
 @app.post("/api/assistant")
-def ask_assistant(request: AssistantRequest):
-    return answer_question(request.question)
+def ask_assistant(request: AssistantRequest, db: Session = Depends(get_db)):
+    telemetry = (
+        db.query(Telemetry)
+        .order_by(Telemetry.timestamp.desc())
+        .first()
+    )
+    if not telemetry:
+        return answer_question(request.question)
+
+    telemetry_data = {
+        "temperature": telemetry.temperature,
+        "vibration": telemetry.vibration,
+        "load": telemetry.load,
+        "rpm": telemetry.rpm,
+        "fuel_rate": telemetry.fuel_rate,
+    }
+    assessment = answer_question(
+        request.question,
+        telemetry=telemetry_data,
+        predictive=detect_anomaly(telemetry_data),
+    )
+    assessment.update({
+        "station": telemetry.station,
+        "asset_id": telemetry.asset_id,
+        "timestamp": telemetry.timestamp,
+    })
+    return assessment

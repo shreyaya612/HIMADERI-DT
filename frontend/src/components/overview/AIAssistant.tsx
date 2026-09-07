@@ -4,6 +4,16 @@ import { Bot, Send, Sparkles, FileText, Zap, Box, CheckCircle2 } from "lucide-re
 interface AssistantResponse {
   question: string
   answer: string
+  problem: string
+  telemetry: Record<string, number>
+  risk: string | null
+  health: number | null
+  likely_causes: string[]
+  why_it_matters: string
+  possible_consequences: string[]
+  recommended_actions: string[]
+  source: string | null
+  confidence: string
   sources: {
     score: number
     text: string
@@ -152,13 +162,22 @@ export default function AIAssistant({
 
             <div className="flex items-center gap-2 text-[10px] text-[#6E7883]">
               <CheckCircle2 size={12} className="text-[#42D392]" />
-              <span>CONFIDENCE: 87% | UPDATED JUST NOW</span>
+              <span>CONFIDENCE: {response.confidence}</span>
             </div>
           </div>
 
-          {/* RESPONSE TEXT */}
-          <div className="rounded border border-[#202A35] bg-[#0B1016] p-4 text-xs leading-relaxed text-[#F2F5F7] whitespace-pre-line">
-            {response.answer}
+          <div className="grid gap-3 rounded border border-[#202A35] bg-[#0B1016] p-4 text-xs leading-relaxed text-[#F2F5F7]">
+            <AssessmentSection title="CURRENT PROBLEM" items={[response.problem]} />
+            {(response.risk || response.health !== null) && (
+              <div className="text-[10px] text-[#A7B0BA]">
+                PREDICTIVE AI: {response.risk ?? "UNKNOWN"} RISK{response.health !== null ? ` · HEALTH ${response.health}` : ""}
+              </div>
+            )}
+            <AssessmentSection title="LIKELY CAUSES" items={response.likely_causes} />
+            <AssessmentSection title="WHY IT MATTERS" items={[response.why_it_matters]} />
+            <AssessmentSection title="POSSIBLE NEXT CONSEQUENCES" items={response.possible_consequences} />
+            <AssessmentSection title="RECOMMENDED ACTION" items={response.recommended_actions} />
+            <AssessmentSection title="SOURCE" items={[response.source ?? "No SOP source available."]} />
           </div>
 
           {/* CITATIONS / SOP SOURCES */}
@@ -205,6 +224,17 @@ export default function AIAssistant({
         </div>
       )}
 
+    </div>
+  )
+}
+
+function AssessmentSection({ title, items }: { title: string; items: string[] }) {
+  return (
+    <div>
+      <div className="mb-1 text-[10px] font-bold text-[#78B9E8]">{title}</div>
+      <ul className="space-y-1 text-[#A7B0BA]">
+        {items.map((item, index) => <li key={index}>• {item}</li>)}
+      </ul>
     </div>
   )
 }
