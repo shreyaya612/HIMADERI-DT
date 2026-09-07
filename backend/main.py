@@ -17,7 +17,16 @@ from models.telemetry import Telemetry
 from models.room import RoomState
 from models.connectivity import StationConnectivity
 from models.sync_queue import SyncQueueEvent
+from models.asset import DigitalTwinAsset
 from services.telemetry_generator import generate_generator_telemetry
+from services.asset_service import (
+    asset_payload,
+    ensure_station_assets,
+    get_asset,
+    latest_telemetry as get_asset_latest_telemetry,
+    station_asset_payloads,
+    telemetry_payload,
+)
 from services.sync_service import (
     OFFLINE,
     ONLINE,
@@ -115,7 +124,12 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -404,82 +418,67 @@ def get_station_assets(
     db: Session = Depends(get_db)
 ):
     station_id = station_id.upper()
+    return {"station": station_id, "assets": station_asset_payloads(db, station_id)}
 
-    if station_id != "MAITRI":
-        return {
-            "station": station_id,
-            "assets": []
-        }
 
-    telemetry = (
-        db.query(Telemetry)
-        .filter(Telemetry.station == station_id)
-        .order_by(Telemetry.timestamp.desc())
-        .first()
-    )
-
-    if not telemetry:
-        return {
-            "station": station_id,
-            "assets": []
-        }
-
-    telemetry_data = {
-        "temperature": telemetry.temperature,
-        "vibration": telemetry.vibration,
-        "load": telemetry.load,
-        "rpm": telemetry.rpm,
-        "fuel_rate": telemetry.fuel_rate,
+@app.get("/api/stations/{station_id}")
+def get_station(station_id: str, db: Session = Depends(get_db)):
+    station_id = station_id.upper()
+    assets = station_asset_payloads(db, station_id)
+    connectivity = get_connectivity(db, station_id)
+    return {
+        "id": station_id,
+        "station": station_id,
+        "connectivity": connectivity.state,
+        "asset_count": len(assets),
     }
 
-    ai_result = detect_anomaly(telemetry_data)
 
-    generator_status = "NORMAL"
+@app.get("/api/assets/{asset_id}")
+def get_asset_state(asset_id: str, db: Session = Depends(get_db)):
+    asset = get_asset(db, asset_id)
+    if asset is None:
+        # Populate the known station catalogue before returning a normal 404.
+        ensure_station_assets(db, "MAITRI")
+        asset = get_asset(db, asset_id)
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    return asset_payload(db, asset)
 
-    if ai_result["risk"] == "HIGH":
-        generator_status = "CRITICAL"
-    elif ai_result["risk"] == "MEDIUM":
-        generator_status = "WARNING"
 
+@app.get("/api/assets/{asset_id}/telemetry")
+def get_asset_telemetry(asset_id: str, db: Session = Depends(get_db)):
+    asset = get_asset(db, asset_id)
+    if asset is None:
+        ensure_station_assets(db, "MAITRI")
+        asset = get_asset(db, asset_id)
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    telemetry = get_asset_latest_telemetry(db, asset.station_id, asset.id)
+    return {
+        "asset_id": asset.id,
+        "station": asset.station_id,
+        "telemetry": telemetry_payload(telemetry),
+    }
+
+
+@app.get("/api/stations/{station_id}/digital-twin")
+def digital_twin_snapshot(station_id: str, db: Session = Depends(get_db)):
+    station_id = station_id.upper()
+    assets = station_asset_payloads(db, station_id)
+    latest = (
+        db.query(Telemetry).filter(Telemetry.station == station_id)
+        .order_by(Telemetry.timestamp.desc()).first()
+    )
     return {
         "station": station_id,
-        "assets": [
-            {
-                "asset_id": "MAI-GEN-01",
-                "name": "Generator 1",
-                "type": "GENERATOR",
-                "status": "NORMAL",
-                "health": 96
-            },
-            {
-                "asset_id": "MAI-GEN-02",
-                "name": "Generator 2",
-                "type": "GENERATOR",
-                "status": generator_status,
-                "health": ai_result["health"]
-            },
-            {
-                "asset_id": "MAI-FUEL-01",
-                "name": "Fuel Farm",
-                "type": "FUEL",
-                "status": "NORMAL",
-                "health": 94
-            },
-            {
-                "asset_id": "MAI-HVAC-01",
-                "name": "HVAC System",
-                "type": "HVAC",
-                "status": "NORMAL",
-                "health": 93
-            },
-            {
-                "asset_id": "MAI-WTR-01",
-                "name": "Water System",
-                "type": "WATER",
-                "status": "NORMAL",
-                "health": 97
-            }
-        ]
+        "connectivity": get_connectivity(db, station_id).state,
+        "assets": assets,
+        "alerts": get_alerts(db),
+        "environment": telemetry_payload(latest),
+        "simulation_state": {
+            "failed_assets": [asset["id"] for asset in assets if asset["status"] == "FAILED"]
+        },
     }
 
 @app.post("/api/unity/rooms")
@@ -641,6 +640,28 @@ def run_simulation(
     else:
         risk_level = "MEDIUM"
 
+    # Persist the state changes so subsequent Unity polls see this simulation.
+    ensure_station_assets(db, station)
+    simulated_asset = get_asset(db, asset_id)
+    if simulated_asset:
+        simulated_asset.status = "FAILED"
+        simulated_asset.health = 0
+
+    affected_asset_map = {
+        "HVAC": "MAI-HVAC-01",
+        "Water System": "MAI-WTR-01",
+    }
+    affected_asset_ids = [asset_id]
+    state_changes = [{"asset_id": asset_id, "status": "FAILED"}]
+    for affected_system in affected_systems:
+        affected_asset_id = affected_asset_map.get(affected_system)
+        affected_asset = get_asset(db, affected_asset_id) if affected_asset_id else None
+        if affected_asset:
+            affected_asset.status = "WARNING"
+            affected_asset_ids.append(affected_asset_id)
+            state_changes.append({"asset_id": affected_asset_id, "status": "WARNING"})
+    db.commit()
+
     return {
         "station": station,
         "scenario": scenario,
@@ -684,6 +705,19 @@ def run_simulation(
 
             "risk_level": risk_level
         },
+
+        # Machine-readable contract for Unity; the existing simulation values
+        # above remain unchanged for the React dashboard.
+        "affected_assets": affected_asset_ids,
+        "state_changes": state_changes,
+        "power_available_percent": round(remaining_capacity, 2),
+        "alerts": [
+            {
+                "asset_id": asset_id,
+                "severity": risk_level,
+                "message": f"{asset_id} simulated as failed"
+            }
+        ],
 
         "message": (
             f"Failure of {asset_id} simulated using "
