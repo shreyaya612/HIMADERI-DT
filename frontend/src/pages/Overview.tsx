@@ -16,15 +16,21 @@ import CommunicationEdgePanel from "../components/overview/CommunicationEdgePane
 import AIAssistant from "../components/overview/AIAssistant"
 import AlertDrawer from "../components/overview/AlertDrawer"
 import AssetDrawer from "../components/overview/AssetDrawer"
+import IncidentModePanel from "../components/overview/IncidentModePanel"
 
 import {
   getLatestTelemetry,
   getAIAnalysis,
   getAlerts,
   getActiveIncidents,
+  getIncidents,
+  getStationConnectivity,
+  createIncident,
+  updateIncidentStatus,
   type AIAnalysis,
   type Alert,
-  type Incident
+  type Incident,
+  type IncidentScenario
 } from "../services/api"
 import type { Telemetry } from "../types/telemetry"
 
@@ -38,6 +44,8 @@ export default function Overview() {
   const [aiAnalysis, setAIAnalysis] = useState<AIAnalysis | null>(null)
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [activeIncidents, setActiveIncidents] = useState<Incident[]>([])
+  const [incidentHistory, setIncidentHistory] = useState<Incident[]>([])
+  const [connectivity, setConnectivity] = useState<"ONLINE" | "OFFLINE">("ONLINE")
   const [error, setError] = useState<string | null>(null)
 
   // Drawers state
@@ -68,18 +76,37 @@ export default function Overview() {
     return () => clearInterval(interval)
   }, [])
 
+  const refreshIncidentData = async () => {
+    const selectedStation = station === "BOTH" ? undefined : station
+    const [open, history, stationConnectivity] = await Promise.all([
+      getActiveIncidents(selectedStation), getIncidents(selectedStation),
+      station === "BOTH" ? Promise.resolve(null) : getStationConnectivity(station),
+    ])
+    setActiveIncidents(open)
+    setIncidentHistory(history)
+    if (stationConnectivity) setConnectivity(stationConnectivity.state)
+  }
+
   useEffect(() => {
-    async function loadIncidents() {
-      try {
-        setActiveIncidents(await getActiveIncidents(station))
-      } catch {
-        // Preserve the last local view while the API is temporarily unavailable.
-      }
-    }
+    const loadIncidents = () => refreshIncidentData().catch(() => undefined)
     loadIncidents()
     const interval = setInterval(loadIncidents, 5000)
     return () => clearInterval(interval)
   }, [station])
+
+  const handleCreateIncident = async (scenario: IncidentScenario, assetId?: string) => {
+    const incident = await createIncident(station, scenario, assetId)
+    setActiveIncidents((current) => [incident, ...current])
+    setIncidentHistory((current) => [incident, ...current])
+    await refreshIncidentData()
+  }
+
+  const handleIncidentStatusChange = async (incident: Incident, status: "MITIGATED" | "RESOLVED") => {
+    const updated = await updateIncidentStatus(incident.id, status)
+    setActiveIncidents((current) => status === "RESOLVED" ? current.filter((item) => item.id !== incident.id) : current.map((item) => item.id === incident.id ? updated : item))
+    setIncidentHistory((current) => current.map((item) => item.id === incident.id ? updated : item))
+    await refreshIncidentData()
+  }
 
   const sampleAlertsList = alerts.length > 0 ? alerts.map((a) => ({
     id: a.id,
@@ -166,6 +193,15 @@ export default function Overview() {
             </section>
           )}
 
+          <IncidentModePanel
+            station={station}
+            openIncidents={activeIncidents}
+            history={incidentHistory}
+            offline={connectivity === "OFFLINE"}
+            onCreate={handleCreateIncident}
+            onStatusChange={handleIncidentStatusChange}
+          />
+
           {/* DYNAMIC TAB RENDERING */}
           {activeTab === "Overview" && (
             <div className="space-y-5">
@@ -236,7 +272,7 @@ export default function Overview() {
 
               {/* COMMUNICATIONS & EDGE PANEL */}
               <CommunicationEdgePanel
-                isEdgeMode={isEdgeMode}
+                isEdgeMode={isEdgeMode || connectivity === "OFFLINE"}
                 onToggleMode={() => setIsEdgeMode(!isEdgeMode)}
               />
 
@@ -269,8 +305,8 @@ export default function Overview() {
           {activeTab === "Predictive Analytics" && <PredictivePanel />}
           {activeTab === "Risk" && <RiskPanel />}
           {activeTab === "What-If Simulation" && <WhatIfSimulation />}
-          {activeTab === "Communications" && <CommunicationEdgePanel isEdgeMode={isEdgeMode} onToggleMode={() => setIsEdgeMode(!isEdgeMode)} />}
-          {activeTab === "Edge / Offline" && <CommunicationEdgePanel isEdgeMode={isEdgeMode} onToggleMode={() => setIsEdgeMode(!isEdgeMode)} />}
+          {activeTab === "Communications" && <CommunicationEdgePanel isEdgeMode={isEdgeMode || connectivity === "OFFLINE"} onToggleMode={() => setIsEdgeMode(!isEdgeMode)} />}
+          {activeTab === "Edge / Offline" && <CommunicationEdgePanel isEdgeMode={isEdgeMode || connectivity === "OFFLINE"} onToggleMode={() => setIsEdgeMode(!isEdgeMode)} />}
           {activeTab === "Alerts" && (
             <StationStatusPanel
               health={92}

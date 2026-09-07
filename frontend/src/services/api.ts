@@ -161,6 +161,14 @@ export interface Incident {
   created_at: string
 }
 
+export type IncidentScenario = Incident["incident_type"]
+
+export interface StationConnectivity {
+  station_id: string
+  state: "ONLINE" | "OFFLINE"
+  updated_at: string
+}
+
 export async function getActiveIncidents(station?: string): Promise<Incident[]> {
   const query = station && station !== "BOTH" ? `?station=${encodeURIComponent(station)}` : ""
   const response = await fetch(`${API_BASE_URL}/api/incidents/active${query}`, { cache: "no-store" })
@@ -169,7 +177,27 @@ export async function getActiveIncidents(station?: string): Promise<Incident[]> 
   return data.incidents
 }
 
-export async function createIncident(station: string, scenario: Incident["incident_type"], asset_id?: string): Promise<Incident> {
+export async function getIncidents(station?: string): Promise<Incident[]> {
+  const query = station && station !== "BOTH" ? `?station=${encodeURIComponent(station)}` : ""
+  const response = await fetch(`${API_BASE_URL}/api/incidents${query}`, { cache: "no-store" })
+  if (!response.ok) throw new Error("Failed to fetch incident history")
+  const data = await response.json()
+  return data.incidents
+}
+
+export async function getIncident(id: number): Promise<Incident> {
+  const response = await fetch(`${API_BASE_URL}/api/incidents/${id}`, { cache: "no-store" })
+  if (!response.ok) throw new Error("Failed to fetch incident")
+  return response.json()
+}
+
+export async function getStationConnectivity(station: string): Promise<StationConnectivity> {
+  const response = await fetch(`${API_BASE_URL}/api/stations/${encodeURIComponent(station)}/connectivity`, { cache: "no-store" })
+  if (!response.ok) throw new Error("Failed to fetch station connectivity")
+  return response.json()
+}
+
+export async function createIncident(station: string, scenario: IncidentScenario, asset_id?: string): Promise<Incident> {
   const response = await fetch(`${API_BASE_URL}/api/incidents`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ station, scenario, asset_id, source: "OPERATOR" }),

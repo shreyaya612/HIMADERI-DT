@@ -67,7 +67,15 @@ def list_incidents(db: Session, station: str | None = None, status: str | None =
         query = query.filter(Incident.status == status)
     return query.order_by(Incident.created_at.desc(), Incident.id.desc()).all()
 
-def list_active_incidents(db: Session, station: str | None = None) -> list[Incident]: return list_incidents(db, station, "ACTIVE")
+def list_active_incidents(db: Session, station: str | None = None) -> list[Incident]:
+    """Return open incidents requiring an operator action.
+
+    A mitigated incident remains visible until it is explicitly resolved.
+    """
+    query = db.query(Incident).filter(Incident.status != "RESOLVED")
+    if station:
+        query = query.filter(Incident.station_id == station.upper())
+    return query.order_by(Incident.created_at.desc(), Incident.id.desc()).all()
 
 def update_incident_status(db: Session, incident: Incident, status: str) -> Incident:
     status = status.upper()

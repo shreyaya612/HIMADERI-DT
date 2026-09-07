@@ -405,7 +405,13 @@ def get_alerts(db: Session = Depends(get_db)):
 
     # Incident alerts complement predictive alerts; they do not replace them.
     for incident in list_active_incidents(db):
-        alerts.extend(serialize_incident(incident)["alerts"])
+        incident_payload = serialize_incident(incident)
+        for alert in incident_payload["alerts"]:
+            alerts.append({
+                **alert,
+                "timestamp": incident.created_at,
+                "asset_id": incident_payload["affected_assets"][0] if incident_payload["affected_assets"] else "",
+            })
     return alerts
 
 
@@ -518,7 +524,9 @@ def digital_twin_snapshot(station_id: str, db: Session = Depends(get_db)):
         "simulation_state": {
             "failed_assets": [asset["id"] for asset in assets if asset["status"] == "FAILED"]
         },
-        "incidents": [serialize_incident(incident) for incident in list_active_incidents(db, station_id)],
+        # Unity receives declared emergencies only. Mitigated incidents remain
+        # available to the operator UI until they are resolved.
+        "incidents": [serialize_incident(incident) for incident in list_incidents(db, station_id, "ACTIVE")],
     }
 
 @app.post("/api/unity/rooms")

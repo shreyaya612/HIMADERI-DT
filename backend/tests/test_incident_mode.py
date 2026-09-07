@@ -55,8 +55,13 @@ class IncidentModeTests(unittest.TestCase):
         self.assertEqual(snapshot["incidents"][0]["id"], incident["id"])
         mitigated = set_incident_status(incident["id"], IncidentStatusRequest(status="MITIGATED"), self.db)
         self.assertEqual(mitigated["status"], "MITIGATED")
+        # Mitigated incidents remain open for the operator's final resolution.
+        self.assertEqual(get_active_incident_list("MAITRI", self.db)["incidents"][0]["status"], "MITIGATED")
         resolved = set_incident_status(incident["id"], IncidentStatusRequest(status="RESOLVED"), self.db)
         self.assertEqual(resolved["status"], "RESOLVED")
+        self.assertEqual(get_active_incident_list("MAITRI", self.db)["incidents"], [])
+        self.db.expire_all()
+        self.assertEqual(get_incident_by_id(incident["id"], self.db)["status"], "RESOLVED")
         self.assertEqual(digital_twin_snapshot("MAITRI", self.db)["incidents"], [])
 
     def test_invalid_active_to_resolved_transition_is_rejected(self):
