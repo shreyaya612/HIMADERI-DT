@@ -7,15 +7,28 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from pydantic import BaseModel
-from fastapi import FastAPI, Depends
+from pydantic import BaseModel, Field
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
 from database.db import engine, get_db, Base
 from models.telemetry import Telemetry
 from models.room import RoomState
+from models.connectivity import StationConnectivity
+from models.sync_queue import SyncQueueEvent
 from services.telemetry_generator import generate_generator_telemetry
+from services.sync_service import (
+    OFFLINE,
+    ONLINE,
+    enqueue_event,
+    get_connectivity,
+    queue_if_offline,
+    run_synchronization,
+    serialize_event,
+    set_connectivity,
+    sync_status,
+)
 from models.simulation import SimulationRequest
 
 from ai.rag.rag_assistant import answer_question
@@ -41,6 +54,17 @@ class RoomDataRequest(BaseModel):
 
 class AssistantRequest(BaseModel):
     question: str
+
+
+class ConnectivityUpdateRequest(BaseModel):
+    state: str
+
+
+class SyncEventRequest(BaseModel):
+    station_id: str
+    event_type: str
+    payload: dict
+    priority: str = Field(default="P5")
     
 Base.metadata.create_all(bind=engine)
 
@@ -55,6 +79,7 @@ async def telemetry_loop():
 
             db.add(telemetry)
             db.commit()
+            queue_if_offline(db, telemetry.station, "TELEMETRY", data, "P5")
 
             print(
                 f"[TELEMETRY] {telemetry.asset_id} | "
@@ -113,6 +138,98 @@ def health_check():
     }
 
 
+@app.get("/api/stations/{station_id}/connectivity")
+def station_connectivity(station_id: str, db: Session = Depends(get_db)):
+    """Read the persisted edge-to-cloud state (ONLINE or OFFLINE)."""
+    connectivity = get_connectivity(db, station_id)
+    return {
+        "station_id": connectivity.station_id,
+        "state": connectivity.state,
+        "updated_at": connectivity.updated_at,
+    }
+
+
+@app.post("/api/stations/{station_id}/connectivity")
+def update_station_connectivity(
+    station_id: str,
+    request: ConnectivityUpdateRequest,
+    db: Session = Depends(get_db),
+):
+    state = request.state.upper()
+    if state not in (ONLINE, OFFLINE):
+        raise HTTPException(status_code=422, detail="state must be ONLINE or OFFLINE")
+
+    connectivity, reconnect_sync = set_connectivity(db, station_id, state)
+    return {
+        "station_id": connectivity.station_id,
+        "state": connectivity.state,
+        "updated_at": connectivity.updated_at,
+        "reconnect_sync": reconnect_sync,
+    }
+
+
+@app.get("/api/sync/queue")
+def get_sync_queue(
+    station_id: str | None = None,
+    include_synced: bool = False,
+    db: Session = Depends(get_db),
+):
+    query = db.query(SyncQueueEvent)
+    if station_id:
+        query = query.filter(SyncQueueEvent.station_id == station_id.upper())
+    if not include_synced:
+        query = query.filter(SyncQueueEvent.sync_status != "SYNCED")
+    events = query.order_by(
+        SyncQueueEvent.priority.asc(),
+        SyncQueueEvent.created_at.asc(),
+        SyncQueueEvent.id.asc(),
+    ).all()
+    return {"events": [serialize_event(event) for event in events]}
+
+
+@app.post("/api/sync/queue/events")
+def add_sync_event(request: SyncEventRequest, db: Session = Depends(get_db)):
+    """Demo-friendly manual local event capture; it never depends on cloud access."""
+    try:
+        event = enqueue_event(
+            db, request.station_id, request.event_type, request.payload, request.priority
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return serialize_event(event)
+
+
+@app.post("/api/sync/run")
+def run_sync(station_id: str | None = None, db: Session = Depends(get_db)):
+    if station_id:
+        if get_connectivity(db, station_id).state == OFFLINE:
+            return {
+                "station_id": station_id.upper(),
+                "message": "Station is OFFLINE; events remain in the local queue.",
+                "attempted": 0,
+                "synced": 0,
+                "failed": 0,
+                "processed_event_ids": [],
+            }
+        return run_synchronization(db, station_id)
+
+    # Never send data for an offline station, even when running a global flush.
+    totals = {"attempted": 0, "synced": 0, "failed": 0, "processed_event_ids": []}
+    station_ids = [row[0] for row in db.query(SyncQueueEvent.station_id).distinct().all()]
+    for queued_station_id in station_ids:
+        if get_connectivity(db, queued_station_id).state == ONLINE:
+            result = run_synchronization(db, queued_station_id)
+            for key in ("attempted", "synced", "failed"):
+                totals[key] += result[key]
+            totals["processed_event_ids"].extend(result["processed_event_ids"])
+    return totals
+
+
+@app.get("/api/sync/status")
+def get_sync_status(station_id: str | None = None, db: Session = Depends(get_db)):
+    return sync_status(db, station_id)
+
+
 @app.post("/api/telemetry/generate")
 def generate_telemetry(db: Session = Depends(get_db)):
 
@@ -123,6 +240,7 @@ def generate_telemetry(db: Session = Depends(get_db)):
     db.add(telemetry)
     db.commit()
     db.refresh(telemetry)
+    queue_if_offline(db, telemetry.station, "TELEMETRY", data, "P5")
 
     return {
         "id": telemetry.id,
@@ -148,6 +266,7 @@ def generate_anomaly(db: Session = Depends(get_db)):
     db.add(telemetry)
     db.commit()
     db.refresh(telemetry)
+    queue_if_offline(db, telemetry.station, "TELEMETRY_ANOMALY", data, "P1")
 
     return {
         "id": telemetry.id,
