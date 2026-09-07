@@ -6,6 +6,9 @@ numpy
 scikit-learn
 joblib
 
+# Shared SQLite training-data access used by anomaly/train.py
+sqlalchemy
+
 # RAG / semantic retrieval
 sentence-transformers
 

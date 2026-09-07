@@ -2,8 +2,11 @@ fastapi
 uvicorn[standard]
 pydantic
 sqlalchemy
+
+# Shared local AI modules imported by the FastAPI application
 pandas
 numpy
 scikit-learn
 joblib
+sentence-transformers
 requests

@@ -1,21 +1,11 @@
-# HIMADRI-DT Frontend
+# HIMADRI-DT frontend dependency reference
+#
+# This is a JavaScript project. Install frontend dependencies with `npm install`
+# from this directory; package.json and package-lock.json are authoritative.
+# Do not use pip with this file.
 
-# Runtime
-react
-react-dom
-
-# Build tooling
-vite
-typescript
-
-# Styling
-tailwindcss
-
-# UI / icons
-lucide-react
-
-# Charts
-recharts
-
-# HTTP/API
-axios
+# Runtime: react, react-dom
+# UI: lucide-react, recharts
+# Styling: tailwindcss, @tailwindcss/vite
+# Tooling: vite, typescript, @vitejs/plugin-react, eslint
+# HTTP: browser fetch API (axios is intentionally not required)
