@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react"
-import { Shield, Bell, Wifi, Cpu, User } from "lucide-react"
+import { Shield, Bell, Wifi, Cpu, User, AlertTriangle } from "lucide-react"
+import type { Incident } from "../../services/api"
 
 interface TopBarProps {
   station: string
@@ -8,6 +9,7 @@ interface TopBarProps {
   isEdgeMode: boolean
   onToggleEdgeMode: () => void
   onOpenAI: () => void
+  activeIncident?: Incident
 }
 
 export default function TopBar({
@@ -16,7 +18,8 @@ export default function TopBar({
   alertCount,
   isEdgeMode,
   onToggleEdgeMode,
-  onOpenAI
+  onOpenAI,
+  activeIncident
 }: TopBarProps) {
   const [time, setTime] = useState<string>("")
 
@@ -71,6 +74,13 @@ export default function TopBar({
 
       {/* RIGHT: SYSTEM STATUS & METADATA */}
       <div className="flex items-center gap-3">
+        {activeIncident && (
+          <div className="hidden items-center gap-1.5 rounded border border-[#F05A5A]/50 bg-[#F05A5A]/10 px-2 py-1 font-mono text-[10px] text-[#F05A5A] lg:flex">
+            <AlertTriangle size={13} />
+            <span className="font-bold">ACTIVE INCIDENT</span>
+            <span>{activeIncident.incident_type.replaceAll("_", " ")} · {activeIncident.station} · {activeIncident.severity}</span>
+          </div>
+        )}
         
         {/* GLOBAL SYSTEM STATE */}
         <div className="hidden items-center gap-2 rounded border border-[#202A35] bg-[#0E141B] px-2.5 py-1 sm:flex">

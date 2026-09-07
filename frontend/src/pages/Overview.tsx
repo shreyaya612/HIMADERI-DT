@@ -21,8 +21,10 @@ import {
   getLatestTelemetry,
   getAIAnalysis,
   getAlerts,
+  getActiveIncidents,
   type AIAnalysis,
-  type Alert
+  type Alert,
+  type Incident
 } from "../services/api"
 import type { Telemetry } from "../types/telemetry"
 
@@ -35,6 +37,7 @@ export default function Overview() {
   const [telemetry, setTelemetry] = useState<Telemetry | null>(null)
   const [aiAnalysis, setAIAnalysis] = useState<AIAnalysis | null>(null)
   const [alerts, setAlerts] = useState<Alert[]>([])
+  const [activeIncidents, setActiveIncidents] = useState<Incident[]>([])
   const [error, setError] = useState<string | null>(null)
 
   // Drawers state
@@ -64,6 +67,19 @@ export default function Overview() {
     const interval = setInterval(loadData, 5000)
     return () => clearInterval(interval)
   }, [])
+
+  useEffect(() => {
+    async function loadIncidents() {
+      try {
+        setActiveIncidents(await getActiveIncidents(station))
+      } catch {
+        // Preserve the last local view while the API is temporarily unavailable.
+      }
+    }
+    loadIncidents()
+    const interval = setInterval(loadIncidents, 5000)
+    return () => clearInterval(interval)
+  }, [station])
 
   const sampleAlertsList = alerts.length > 0 ? alerts.map((a) => ({
     id: a.id,
@@ -99,6 +115,7 @@ export default function Overview() {
         isEdgeMode={isEdgeMode}
         onToggleEdgeMode={() => setIsEdgeMode(!isEdgeMode)}
         onOpenAI={() => setActiveTab("AI Assistant")}
+        activeIncident={activeIncidents[0]}
       />
 
       {/* SIDEBAR NAVIGATION */}
@@ -134,6 +151,20 @@ export default function Overview() {
               </div>
             )}
           </div>
+
+          {activeIncidents.length > 0 && (
+            <section className="rounded border border-[#F05A5A]/40 bg-[#F05A5A]/10 p-3 font-mono">
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="font-bold text-[#F05A5A]">🚨 ACTIVE INCIDENT</span>
+                <span className="rounded bg-[#F05A5A]/20 px-1.5 py-0.5 font-bold text-[#F05A5A]">{activeIncidents[0].severity}</span>
+                <span className="font-bold text-[#F2F5F7]">{activeIncidents[0].incident_type.replaceAll("_", " ")}</span>
+                <span className="text-[#78B9E8]">{activeIncidents[0].station}</span>
+              </div>
+              <p className="mt-1 text-xs text-[#D8DEE5]">{activeIncidents[0].description}</p>
+              <p className="mt-1 text-[11px] text-[#A7B0BA]">Affected: {activeIncidents[0].affected_assets.join(", ") || "station-level"} · {new Date(activeIncidents[0].created_at).toLocaleString()}</p>
+              {activeIncidents[0].recommended_actions[0] && <p className="mt-1 text-[11px] text-[#78B9E8]">Action: {activeIncidents[0].recommended_actions[0]}</p>}
+            </section>
+          )}
 
           {/* DYNAMIC TAB RENDERING */}
           {activeTab === "Overview" && (

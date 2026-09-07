@@ -21,6 +21,11 @@ render returned state, not implement simulation or AI logic.
 | GET | `/api/stations/{station_id}/connectivity` | Persisted `ONLINE` or `OFFLINE` edge state |
 | GET | `/api/alerts` | Predictive AI alerts |
 | POST | `/api/simulation` | Run a supported what-if scenario |
+| POST | `/api/incidents` | Declare a persistent simulated operational incident |
+| GET | `/api/incidents` | List incidents, optionally filtered by `station` and `status` |
+| GET | `/api/incidents/active` | List active incidents, optionally filtered by `station` |
+| GET | `/api/incidents/{incident_id}` | Retrieve one incident |
+| POST | `/api/incidents/{incident_id}/status` | Move `ACTIVE → MITIGATED → RESOLVED` |
 
 `/api/connectivity/{station_id}` is intentionally not duplicated; use the existing
 station-scoped connectivity endpoint above.
@@ -93,3 +98,40 @@ read these machine-friendly fields:
 Simulation state is persisted in the existing SQLite database. A later
 `GET /api/assets/MAI-GEN-02` or digital-twin poll reports `FAILED` until a future
 backend state-update workflow changes it.
+
+## Incident Mode
+
+Incident Mode stores deterministic, simulated operational scenarios locally. The
+supported values are `GENERATOR_FAILURE`, `FIRE`, `BLACKOUT`, `FUEL_LEAK`,
+`COMMUNICATION_LOSS`, and `BLIZZARD`. Unity may create incidents through the API,
+but normally polls the digital-twin snapshot and visualizes its active incidents.
+
+```json
+POST /api/incidents
+{
+  "station": "MAITRI",
+  "scenario": "GENERATOR_FAILURE",
+  "asset_id": "MAI-GEN-02"
+}
+```
+
+The snapshot retains every existing field and adds an `incidents` array containing
+only active incidents:
+
+```json
+{
+  "station": "MAITRI",
+  "incidents": [{
+    "id": 1,
+    "incident_type": "GENERATOR_FAILURE",
+    "severity": "CRITICAL",
+    "status": "ACTIVE",
+    "affected_assets": ["MAI-GEN-02"]
+  }]
+}
+```
+
+Use `POST /api/incidents/1/status` with `{ "status": "MITIGATED" }`, followed
+by `{ "status": "RESOLVED" }`. Resolved incidents no longer appear in the
+digital-twin `incidents` array. A `COMMUNICATION_LOSS` incident sets connectivity
+to `OFFLINE`; Unity can continue polling the local API and reading local state.

@@ -146,3 +146,42 @@ export async function runSimulation(
 
   return response.json()
 }
+
+export interface Incident {
+  id: number
+  station: string
+  incident_type: "GENERATOR_FAILURE" | "FIRE" | "BLACKOUT" | "FUEL_LEAK" | "COMMUNICATION_LOSS" | "BLIZZARD"
+  severity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
+  title: string
+  description: string
+  status: "ACTIVE" | "MITIGATED" | "RESOLVED"
+  source: "OPERATOR" | "SIMULATION"
+  affected_assets: string[]
+  recommended_actions: string[]
+  created_at: string
+}
+
+export async function getActiveIncidents(station?: string): Promise<Incident[]> {
+  const query = station && station !== "BOTH" ? `?station=${encodeURIComponent(station)}` : ""
+  const response = await fetch(`${API_BASE_URL}/api/incidents/active${query}`, { cache: "no-store" })
+  if (!response.ok) throw new Error("Failed to fetch active incidents")
+  const data = await response.json()
+  return data.incidents
+}
+
+export async function createIncident(station: string, scenario: Incident["incident_type"], asset_id?: string): Promise<Incident> {
+  const response = await fetch(`${API_BASE_URL}/api/incidents`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ station, scenario, asset_id, source: "OPERATOR" }),
+  })
+  if (!response.ok) throw new Error("Failed to create incident")
+  return response.json()
+}
+
+export async function updateIncidentStatus(id: number, status: Incident["status"]): Promise<Incident> {
+  const response = await fetch(`${API_BASE_URL}/api/incidents/${id}/status`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }),
+  })
+  if (!response.ok) throw new Error("Failed to update incident status")
+  return response.json()
+}

@@ -18,6 +18,7 @@ from models.room import RoomState
 from models.connectivity import StationConnectivity
 from models.sync_queue import SyncQueueEvent
 from models.asset import DigitalTwinAsset
+from models.incident import Incident, ensure_incident_schema
 from services.telemetry_generator import generate_generator_telemetry
 from services.asset_service import (
     asset_payload,
@@ -39,6 +40,10 @@ from services.sync_service import (
     sync_status,
 )
 from models.simulation import SimulationRequest
+from services.incident_service import (
+    create_incident, get_incident, list_active_incidents, list_incidents,
+    serialize_incident, update_incident_status,
+)
 
 from ai.rag.rag_assistant import answer_question
 from ai.anomaly.detector import detect_anomaly
@@ -74,8 +79,20 @@ class SyncEventRequest(BaseModel):
     event_type: str
     payload: dict
     priority: str = Field(default="P5")
+
+
+class IncidentCreateRequest(BaseModel):
+    station: str
+    scenario: str
+    asset_id: str | None = None
+    source: str = "OPERATOR"
+
+
+class IncidentStatusRequest(BaseModel):
+    status: str
     
 Base.metadata.create_all(bind=engine)
+ensure_incident_schema(engine)
 
 async def telemetry_loop():
     while True:
@@ -367,50 +384,72 @@ def get_alerts(db: Session = Depends(get_db)):
         .first()
     )
 
-    if not telemetry:
-        return []
-
-    telemetry_data = {
-        "temperature": telemetry.temperature,
-        "vibration": telemetry.vibration,
-        "load": telemetry.load,
-        "rpm": telemetry.rpm,
-        "fuel_rate": telemetry.fuel_rate,
-    }
-
-    ai_result = detect_anomaly(telemetry_data)
-
     alerts = []
+    if telemetry:
+        telemetry_data = {
+            "temperature": telemetry.temperature,
+            "vibration": telemetry.vibration,
+            "load": telemetry.load,
+            "rpm": telemetry.rpm,
+            "fuel_rate": telemetry.fuel_rate,
+        }
+        ai_result = detect_anomaly(telemetry_data)
+        if ai_result["risk"] == "HIGH":
+            alerts.append({"id": "AI-GEN-001", "severity": "CRITICAL", "asset_id": telemetry.asset_id,
+                           "title": "Generator anomaly detected", "message": f"Abnormal operating pattern detected in {telemetry.asset_id}",
+                           "timestamp": telemetry.timestamp, "source": "AI Predictive Monitoring"})
+        elif ai_result["risk"] == "MEDIUM":
+            alerts.append({"id": "AI-GEN-002", "severity": "WARNING", "asset_id": telemetry.asset_id,
+                           "title": "Generator requires attention", "message": f"Unusual operating pattern detected in {telemetry.asset_id}",
+                           "timestamp": telemetry.timestamp, "source": "AI Predictive Monitoring"})
 
-    if ai_result["risk"] == "HIGH":
-        alerts.append({
-            "id": "AI-GEN-001",
-            "severity": "CRITICAL",
-            "asset_id": telemetry.asset_id,
-            "title": "Generator anomaly detected",
-            "message": (
-                f"Abnormal operating pattern detected in "
-                f"{telemetry.asset_id}"
-            ),
-            "timestamp": telemetry.timestamp,
-            "source": "AI Predictive Monitoring"
-        })
-
-    elif ai_result["risk"] == "MEDIUM":
-        alerts.append({
-            "id": "AI-GEN-002",
-            "severity": "WARNING",
-            "asset_id": telemetry.asset_id,
-            "title": "Generator requires attention",
-            "message": (
-                f"Unusual operating pattern detected in "
-                f"{telemetry.asset_id}"
-            ),
-            "timestamp": telemetry.timestamp,
-            "source": "AI Predictive Monitoring"
-        })
-
+    # Incident alerts complement predictive alerts; they do not replace them.
+    for incident in list_active_incidents(db):
+        alerts.extend(serialize_incident(incident)["alerts"])
     return alerts
+
+
+@app.post("/api/incidents")
+def create_station_incident(request: IncidentCreateRequest, db: Session = Depends(get_db)):
+    def run_generator_failure(station: str, asset_id: str):
+        return run_simulation(SimulationRequest(station=station, scenario="GENERATOR_FAILURE", asset_id=asset_id), db)
+    try:
+        incident = create_incident(db, request.station, request.scenario, request.asset_id, request.source, run_generator_failure)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return serialize_incident(incident)
+
+
+@app.get("/api/incidents")
+def get_incident_list(station: str | None = None, status: str | None = None, db: Session = Depends(get_db)):
+    try:
+        return {"incidents": [serialize_incident(incident) for incident in list_incidents(db, station, status)]}
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/api/incidents/active")
+def get_active_incident_list(station: str | None = None, db: Session = Depends(get_db)):
+    return {"incidents": [serialize_incident(incident) for incident in list_active_incidents(db, station)]}
+
+
+@app.get("/api/incidents/{incident_id}")
+def get_incident_by_id(incident_id: int, db: Session = Depends(get_db)):
+    incident = get_incident(db, incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    return serialize_incident(incident)
+
+
+@app.post("/api/incidents/{incident_id}/status")
+def set_incident_status(incident_id: int, request: IncidentStatusRequest, db: Session = Depends(get_db)):
+    incident = get_incident(db, incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    try:
+        return serialize_incident(update_incident_status(db, incident, request.status))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 @app.get("/api/stations/{station_id}/assets")
 def get_station_assets(
@@ -479,6 +518,7 @@ def digital_twin_snapshot(station_id: str, db: Session = Depends(get_db)):
         "simulation_state": {
             "failed_assets": [asset["id"] for asset in assets if asset["status"] == "FAILED"]
         },
+        "incidents": [serialize_incident(incident) for incident in list_active_incidents(db, station_id)],
     }
 
 @app.post("/api/unity/rooms")

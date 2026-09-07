@@ -1,0 +1,21 @@
+# HIMADRI-DT Frontend
+
+# Runtime
+react
+react-dom
+
+# Build tooling
+vite
+typescript
+
+# Styling
+tailwindcss
+
+# UI / icons
+lucide-react
+
+# Charts
+recharts
+
+# HTTP/API
+axios
